@@ -9,17 +9,18 @@
 #include "rpcBLEDevice.h"
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
-#include "seeed_rpcUnified.h"
-#include "rtl_ble/ble_unified.h"
+//#include "seeed_rpcUnified.h"
+//#include "rtl_ble/ble_unified.h"
 
+#define SCALE_SERVICE_UUID "0000FFF0-0000-1000-8000-00805F9B34FB"
 // The remote service we wish to connect to.
 //static BLEUUID serviceUUID(0xFEE0);
-static BLEUUID serviceUUID("0000FFF0-0000-1000-8000-00805F9B34FB");
+static BLEUUID serviceUUID(SCALE_SERVICE_UUID);
 // The characteristic of the remote service we are interested in.
 static BLEUUID charUUID_RD("0000FFF4-0000-1000-8000-00805F9B34FB");
 static BLEUUID charUUID_WR("000036F5-0000-1000-8000-00805F9B34FB");
 
-static boolean doConnect = false;
+static boolean doConnect = true;
 static boolean connected = false;
 static boolean doScan = false;
 static BLERemoteCharacteristic *pRemoteCharacteristic;
@@ -74,21 +75,53 @@ bool connectToServer()
 {
   uint8_t i;
   uint8_t read_cycle;
+  std::string read_value = "1234567";
   Serial.print("Forming a connection to ");
   Serial.println(myDevice->getAddress().toString().c_str());
+  //Serial.println(BattServer.toString().c_str());
 
   BLEClient *pClient = BLEDevice::createClient();
+  if (pClient == nullptr)
+  {
+    Serial.println(" - Failed to create client");
+    return false;
+  }
   Serial.println(" - Created client");
 
   pClient->setClientCallbacks(new MyClientCallback());
 
   // Connect to the remove BLE Server.
   pClient->connect(myDevice); // if you pass BLEAdvertisedDevice instead of address, it will be recognized type of peer device address (public or private)
-  Serial.println(" - Connected to server");
-
+  /*
+  if (pClient->connect(BattServer, GAP_REMOTE_ADDR_LE_PUBLIC) == false)
+  {
+    Serial.println("Connection failed!");
+    return false;
+  }
+  */
+  delay(100);
+  if (pClient->isConnected())
+  {
+    Serial.println(" - Connected to server");
+  }
+  else
+  {
+    Serial.println("Connection failed!");
+    return false;
+  }
+  read_value = pClient->getValue(serviceUUID, charUUID_RD);
+  Serial.print("The characteristic value was: ");
+  for (i = 0; i < 8; i++)
+  {
+    Serial.print("0x");
+    Serial.print(read_value[i], HEX);
+    Serial.print(",");
+  }
+  Serial.println("");
   // Obtain a reference to the service we are after in the remote BLE server.
-  BLERemoteService *pRemoteService = pClient->getService(serviceUUID);
   Serial.println(serviceUUID.toString().c_str());
+  //BLERemoteService *pRemoteService = pClient->getService(serviceUUID);
+  BLERemoteService *pRemoteService = pClient->getService(SCALE_SERVICE_UUID);
   if (pRemoteService == nullptr)
   {
     Serial.print("Failed to find our service UUID: ");
@@ -157,23 +190,19 @@ bool connectToServer()
     {
       value.clear();
       value = pRemoteCharacteristic->readValue();
+      if (value[0] != 3)
+      {
+        read_cycle = 10;
+      }
       Serial.print("The characteristic value was: ");
       for (i = 0; i < 7; i++)
       {
         Serial.print("0x");
         Serial.print(value[i], HEX);
         Serial.print(",");
+        value[i] = 0x31;
       }
-      Serial.print(" = ");
-      Serial.println(value.c_str());
-      if (value[0] != 3)
-      {
-        read_cycle = 10;
-      }
-      else
-      {
-        value[0] = 1;
-      }
+      Serial.println("");
       read_cycle++;
       delay(2000);
     }
@@ -182,12 +211,14 @@ bool connectToServer()
   if (pRemoteCharacteristic->canNotify())
   {
     Serial.println(" -  can  notify");
-    pRemoteCharacteristic->registerForNotify(notifyCallback);
+    //pRemoteCharacteristic->registerForNotify(notifyCallback);
   }
+  Serial.println("delay(10000)");
   delay(10000);
+  Serial.println("disconnect");
   pClient->disconnect();
   connected = false;
-  return true;
+  return false;
 }
 /**
  * Scan for BLE servers and find the first one that advertises the service we are looking for.
@@ -206,8 +237,10 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     // We have found a device, let us now see if it contains the service we are looking for.
     if (memcmp(advertisedDevice.getAddress().getNative(), BattServer.getNative(), 6) == 0)
     {
-      Serial.print("BATT Device found: ");
+      Serial.print("BATT Client Device found: ");
       Serial.println(advertisedDevice.toString().c_str());
+      Serial.print("Address Type: ");
+      Serial.println(advertisedDevice.getAddressType());
       BLEDevice::getScan()->stop();
       Serial.println("new BLEAdvertisedDevice");
       myDevice = new BLEAdvertisedDevice(advertisedDevice);
@@ -226,17 +259,20 @@ void setup()
   };
   delay(2000);
   Serial.println("Starting Arduino BLE Client application...");
-  BLEDevice::init("");
+  BLEDevice::init("Scale_Client");
 
   // Retrieve a Scanner and set the callback we want to use to be informed when we
   // have detected a new device.  Specify that we want active scanning and start the
   // scan to run for 5 seconds.
+
   BLEScan *pBLEScan = BLEDevice::getScan();
   pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
   pBLEScan->setInterval(1349);
   pBLEScan->setWindow(449);
   pBLEScan->setActiveScan(true);
-  pBLEScan->start(5, false);
+  pBLEScan->start(15, false);
+
+  doConnect = true;
 } // End of setup.
 
 // This is the Arduino main loop function.
