@@ -36,8 +36,11 @@ static boolean doScanRestart = false;
 static BLEScan *pBLEScan;
 static BLERemoteCharacteristic *pRemoteCharacteristic;
 static BLEAdvertisedDevice *myDevice;
+#if defined(__SAMD51__)
+uint8_t bd_addr[6] = {0x1C, 0x03, 0x00, 0x10, 0xFF, 0xFF};
+#else
 uint8_t bd_addr[6] = {0xFF, 0xFF, 0x10, 0x00, 0x03, 0x1C};
-//uint8_t bd_addr[6] = {0x1C, 0x03, 0x00, 0x10, 0xFF, 0xFF};
+#endif
 BLEAddress DecentScaleAddr(bd_addr);
 
 uint8_t cmd_LedOn[7] = {0x03, 0x0A, 0x01, 0x01, 0x00, 0x00, 0x09};
@@ -155,15 +158,14 @@ bool connectToServer()
   }
   Serial.println("Created a BLE client");
   Serial.print("Forming a connection to ");
-  //Serial.println(myDevice->getAddress().toString().c_str());
-  Serial.println(DecentScaleAddr.toString().c_str());
+  Serial.println(myDevice->getAddress().toString().c_str());
+  //Serial.println(DecentScaleAddr.toString().c_str());
 
   pClient->setClientCallbacks(new MyClientCallback());
 
   // Connect to the remove BLE Server.
-  //pClient->connect(myDevice); // if you pass BLEAdvertisedDevice instead of address, it will be recognized type of peer device address (public or private)
-
-  pClient->connect(DecentScaleAddr);
+  pClient->connect(myDevice); // if you pass BLEAdvertisedDevice instead of address, it will be recognized type of peer device address (public or private)
+  //pClient->connect(DecentScaleAddr);
 
   delay(100);
   if (pClient->isConnected())
@@ -263,13 +265,24 @@ bool connectToServer()
   delay(2000);
   delay(2000);
   delay(2000);
+  /*
   Serial.println("Disconnecting");
   pClient->disconnect();
   connected = false;
   read_cycle = 0;
-  while (pClient->isConnected() && read_cycle < 20)
+  */
+  while (pClient->isConnected())
   {
-    Serial.print(".");
+    if (pRemoteCharacteristic->canRead())
+    {
+      read_value = pRemoteCharacteristic->readValue();
+      Serial.print("Value: ");
+      Serial_println_string_in_hex(&read_value);
+    }
+    else
+    {
+      Serial.print(".");
+    }
     delay(1000);
     read_cycle++;
   }
@@ -287,19 +300,19 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
    */
   void onResult(BLEAdvertisedDevice advertisedDevice)
   {
-    //Serial.print("BLE Advertised Device found: ");
-    //Serial.println(advertisedDevice.toString().c_str());
+    Serial.print("BLE Advertised Device found: ");
+    Serial.println(advertisedDevice.toString().c_str());
 
     // We have found a device, let us now see if it contains the service we are looking for.
     if (memcmp(advertisedDevice.getAddress().getNative(), DecentScaleAddr.getNative(), 6) == 0)
     {
-      /*
       Serial.print("BATT Client Device found: ");
       Serial.println(advertisedDevice.toString().c_str());
       Serial.print("Address Type: ");
       Serial.println(advertisedDevice.getAddressType());
-      */
       BLEDevice::getScan()->stop();
+      /*
+      */
       //Serial.println("new BLEAdvertisedDevice");
       myDevice = new BLEAdvertisedDevice(advertisedDevice);
       //Serial.println("new BLEAdvertisedDevice done");
@@ -325,13 +338,13 @@ void setup()
   // Retrieve a Scanner and set the callback we want to use to be informed when we
   // have detected a new device.  Specify that we want active scanning and start the
   // scan to run for 5 seconds.
-  /*
   pBLEScan = BLEDevice::getScan();
   pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
   pBLEScan->setInterval(1349);
   pBLEScan->setWindow(449);
   pBLEScan->setActiveScan(true);
   pBLEScan->start(25, true);
+  /*
   */
 
   doConnect = true;
