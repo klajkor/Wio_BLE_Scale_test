@@ -28,7 +28,8 @@
 #define SCALE_PNP_SERVICE_UUID "0000180A-0000-1000-8000-00805F9B34FB"
 #define SCALE_PNP_CHAR_UUID "00002A50-0000-1000-8000-00805F9B34FB"
 
-#define MAX_NOTIFY_READ_CYCLE 100U
+#define MAX_NOTIFY_READ_CYCLE 1000U
+#define DECENT_SCALE_PACKET_LEN 7
 
 // Scale main service UUID
 static BLEUUID serviceUUID(SCALE_MAIN_SERVICE_UUID);
@@ -38,7 +39,7 @@ static BLEUUID charUUID_WR(SCALE_WRITE_CHAR_UUID);
 
 static boolean doConnect = true;
 static boolean connected = false;
-static boolean doScanRestart = false;
+static boolean doScan = false;
 static boolean callBackRegistered = false;
 static BLEScan *pBLEScan;
 static BLERemoteCharacteristic *pReadCharacteristic;
@@ -53,26 +54,50 @@ BLEAddress DecentScaleAddr(scale_BT_MAC_addr);
 BLEClient *pScaleClient;
 BLERemoteService *pScaleRemoteService;
 
-uint8_t cmd_LedOn[7] = {0x03, 0x0A, 0x01, 0x01, 0x00, 0x00, 0x09};
-uint8_t cmd_LedOff[7] = {0x03, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x09};
-uint8_t cmd_TimerStop[7] = {0x03, 0x0B, 0x00, 0x00, 0x00, 0x00, 0x08};
-uint8_t cmd_TimerReset[7] = {0x03, 0x0B, 0x02, 0x00, 0x00, 0x00, 0x0A};
+uint8_t cmd_LedOn[DECENT_SCALE_PACKET_LEN] = {0x03, 0x0A, 0x01, 0x01, 0x00, 0x00, 0x09};
+uint8_t cmd_LedOff[DECENT_SCALE_PACKET_LEN] = {0x03, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x09};
+uint8_t cmd_TimerStop[DECENT_SCALE_PACKET_LEN] = {0x03, 0x0B, 0x00, 0x00, 0x00, 0x00, 0x08};
+uint8_t cmd_TimerReset[DECENT_SCALE_PACKET_LEN] = {0x03, 0x0B, 0x02, 0x00, 0x00, 0x00, 0x0A};
 
 uint32_t call_back_counter;
+
+int16_t get_weight_tenthgramm_from_packet(char *pString_i)
+{
+  int8_t highByte;
+  int8_t lowByte;
+  int16_t ret_weight;
+  highByte = (int8_t)pString_i[2];
+  lowByte = (int8_t)pString_i[3];
+  ret_weight = (int16_t)(((highByte & 0xFF) << 8) | (lowByte & 0xFF));
+  return ret_weight;
+}
+
+float get_weight_gramm_from_packet(char *pString_i)
+{
+  int16_t tenthgramm;
+  tenthgramm = get_weight_tenthgramm_from_packet(pString_i);
+  return (float)(tenthgramm / 10.0);
+}
 
 void set_ScaleCmd(uint8_t *pCmd, std::string *pString_o)
 {
   uint8_t i;
-  for (i = 0; i < 7; i++)
+  for (i = 0; i < DECENT_SCALE_PACKET_LEN; i++)
   {
     pString_o->at(i) = pCmd[i];
   }
 }
 
-void Serial_println_string_in_hex(std::string *pString_i)
+void Serial_print_string_in_hex(std::string *pString_i, uint32_t len_i)
 {
   uint32_t i;
-  for (i = 0; i < pString_i->length(); i++)
+  uint32_t max_len;
+  max_len = pString_i->length();
+  if (len_i < max_len)
+  {
+    max_len = len_i;
+  }
+  for (i = 0; i < max_len; i++)
   {
     if (pString_i->at(i) < 16)
     {
@@ -85,10 +110,15 @@ void Serial_println_string_in_hex(std::string *pString_i)
     Serial.print(pString_i->at(i), HEX);
     Serial.print(",");
   }
+}
+
+void Serial_println_string_in_hex(std::string *pString_i, uint32_t len_i)
+{
+  Serial_print_string_in_hex(pString_i, len_i);
   Serial.println("");
 }
 
-void Serial_println_chars_in_hex(uint8_t *pString_i, uint32_t len_i)
+void Serial_print_chars_in_hex(uint8_t *pString_i, uint32_t len_i)
 {
   uint32_t i;
   for (i = 0; i < len_i; i++)
@@ -104,6 +134,11 @@ void Serial_println_chars_in_hex(uint8_t *pString_i, uint32_t len_i)
     Serial.print(pString_i[i], HEX);
     Serial.print(",");
   }
+}
+
+void Serial_println_chars_in_hex(uint8_t *pString_i, uint32_t len_i)
+{
+  Serial_print_chars_in_hex(pString_i, len_i);
   Serial.println("");
 }
 
@@ -127,7 +162,10 @@ static void notifyCallback(
       Serial.print("Scale data #");
       Serial.print(call_back_counter);
       Serial.print(": ");
-      Serial_println_chars_in_hex(pData, length);
+      Serial_print_chars_in_hex(pData, length);
+      Serial.print(" => ");
+      Serial.print(get_weight_gramm_from_packet((char *)pData));
+      Serial.println(" gr");
     }
   }
   else
@@ -222,19 +260,19 @@ bool connectToServer()
       {
         Serial.println(F(" -  and it is writeable"));
         Serial.println(F("Sending double Led OFF command to scale "));
-        pWriteCharacteristic->writeValue(cmd_LedOff, 7, false);
+        pWriteCharacteristic->writeValue(cmd_LedOff, DECENT_SCALE_PACKET_LEN, false);
         delay(300);
-        pWriteCharacteristic->writeValue(cmd_LedOff, 7, false);
+        pWriteCharacteristic->writeValue(cmd_LedOff, DECENT_SCALE_PACKET_LEN, false);
         delay(300);
         Serial.println(F("Sending double Led ON command to scale "));
-        pWriteCharacteristic->writeValue(cmd_LedOn, 7, false);
+        pWriteCharacteristic->writeValue(cmd_LedOn, DECENT_SCALE_PACKET_LEN, false);
         delay(300);
-        pWriteCharacteristic->writeValue(cmd_LedOn, 7, false);
+        pWriteCharacteristic->writeValue(cmd_LedOn, DECENT_SCALE_PACKET_LEN, false);
         delay(300);
         Serial.println(F("Sending Timer Stop & Reset command to scale "));
-        pWriteCharacteristic->writeValue(cmd_TimerStop, 7, false);
+        pWriteCharacteristic->writeValue(cmd_TimerStop, DECENT_SCALE_PACKET_LEN, false);
         delay(300);
-        pWriteCharacteristic->writeValue(cmd_TimerReset, 7, false);
+        pWriteCharacteristic->writeValue(cmd_TimerReset, DECENT_SCALE_PACKET_LEN, false);
         delay(300);
       }
     }
@@ -243,6 +281,7 @@ bool connectToServer()
   // Obtain a reference to the characteristic in the service of the remote BLE server.
   Serial.print(F("Searching for Read characteristic: "));
   Serial.println(charUUID_RD.toString().c_str());
+  pReadCharacteristic = nullptr;
   pReadCharacteristic = pScaleRemoteService->getCharacteristic(charUUID_RD);
   if (pReadCharacteristic == nullptr)
   {
@@ -257,7 +296,7 @@ bool connectToServer()
   {
     Serial.println(" - test reading started");
     read_cycle = 0;
-    while (read_cycle < 5)
+    while (read_cycle < 3)
     {
       read_value = pReadCharacteristic->readValue();
       if (read_value.at(0) != 3)
@@ -265,7 +304,10 @@ bool connectToServer()
         read_cycle = 10;
       }
       Serial.print("Value: ");
-      Serial_println_string_in_hex(&read_value);
+      Serial_print_string_in_hex(&read_value, DECENT_SCALE_PACKET_LEN);
+      Serial.print(" => ");
+      Serial.print(get_weight_gramm_from_packet((char *)read_value.c_str()));
+      Serial.println(" gr");
       read_cycle++;
       delay(2000);
     }
@@ -282,21 +324,21 @@ bool connectToServer()
   /*
   Serial.println("Disconnecting");
   pScaleClient->disconnect();
-  connected = false;
   read_cycle = 0;
   */
   while (callBackRegistered && call_back_counter < MAX_NOTIFY_READ_CYCLE)
   {
     delay(1);
   }
-  pWriteCharacteristic->~BLERemoteCharacteristic();
-  pReadCharacteristic->~BLERemoteCharacteristic();
+  //pWriteCharacteristic->~BLERemoteCharacteristic();
+  //pReadCharacteristic->~BLERemoteCharacteristic();
   pScaleClient->disconnect();
   delay(300);
   pScaleClient->disconnect();
   delay(300);
   Serial.println("Disconnected");
-  doScanRestart = true;
+  connected = false;
+  doScan = true;
   return false;
 }
 /**
@@ -324,7 +366,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
       */
       myDevice = new BLEAdvertisedDevice(advertisedDevice);
       doConnect = true;
-      doScanRestart = true;
+      doScan = true;
     } // onResult
     else
     {
@@ -355,7 +397,7 @@ void setup()
   /*
   */
 
-  doConnect = true;
+  //doConnect = true;
 } // End of setup.
 
 // This is the Arduino main loop function.
@@ -375,29 +417,24 @@ void loop()
     {
       Serial.println("We are now disconnected from the BLE Server.");
       delay(1000);
-      doConnect = true;
     }
-    if (doScanRestart == true)
-    {
-      doScanRestart = false;
-      /*
+    doConnect = true;
+  }
+  if (connected == false && doScan == true)
+  {
+    Serial.println("BLE Scan re-start");
+    BLEDevice::getScan()->start(0);
+    /*
       Serial.println("BLE Scan stop");
-      pBLEScan = BLEDevice::getScan();
       pBLEScan->stop();
       delay(2000);
       delay(2000);
-      Serial.println("BLE Scan start");
       pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
       pBLEScan->setInterval(1349);
       pBLEScan->setWindow(449);
       pBLEScan->setActiveScan(true);
       pBLEScan->start(25, true);
       */
-    }
-  }
-  else
-  {
-    doScanRestart = false;
   }
   Serial.print(".");
   delay(1000);
