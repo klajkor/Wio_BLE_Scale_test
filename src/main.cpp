@@ -6,14 +6,21 @@
  * updated by chegewara
  */
 
+#include <string.h>
 #if defined(__SAMD51__)
 // for Wio Terminal:
-#include "rpcBLEDevice.h"
+// Bluetooth driver:
+#include "BLEDevice.h"
+#include "Seeed_rpcUnified.h"
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
-#include "seeed_rpcUnified.h"
-#include "rtl_ble/ble_unified.h"
-#include "rtl_ble/ble_client.h"
+//Display driver:
+#include "TFT_eSPI.h" //TFT LCD library
+#include <SPI.h>
+#include "Free_Fonts.h"
+//#include "seeed_rpcUnified.h"
+//#include "rtl_ble/ble_unified.h"
+//#include "rtl_ble/ble_client.h"
 #else
 // for ESP32:
 #include "BLEDevice.h"
@@ -28,7 +35,7 @@
 #define SCALE_PNP_SERVICE_UUID "0000180A-0000-1000-8000-00805F9B34FB"
 #define SCALE_PNP_CHAR_UUID "00002A50-0000-1000-8000-00805F9B34FB"
 
-#define MAX_NOTIFY_READ_CYCLE 1000U
+#define MAX_NOTIFY_READ_CYCLE 50000U
 #define DECENT_SCALE_PACKET_LEN 7
 
 // Scale main service UUID
@@ -60,6 +67,79 @@ uint8_t cmd_TimerStop[DECENT_SCALE_PACKET_LEN] = {0x03, 0x0B, 0x00, 0x00, 0x00, 
 uint8_t cmd_TimerReset[DECENT_SCALE_PACKET_LEN] = {0x03, 0x0B, 0x02, 0x00, 0x00, 0x00, 0x0A};
 
 uint32_t call_back_counter;
+
+#if defined(__SAMD51__)
+TFT_eSPI tft; //initialize TFT LCD
+TFT_eSprite status_display(&tft);
+TFT_eSprite scale_display(&tft);
+#endif
+
+void wio_gpio_init(void)
+{
+#if defined(__SAMD51__)
+  pinMode(WIO_KEY_A, INPUT);
+  pinMode(WIO_KEY_B, INPUT);
+  pinMode(WIO_KEY_C, INPUT);
+  Serial.println("GPIO init completed.");
+#endif
+}
+
+void wio_display_init(void)
+{
+#if defined(__SAMD51__)
+  tft.begin();
+  tft.init();
+  tft.setRotation(3);
+  tft.fillScreen(TFT_BLACK);
+  Serial.println("Display init completed.");
+#endif
+}
+
+void wio_set_background(void)
+{
+#if defined(__SAMD51__)
+  //background.createSprite(320, 240);
+  //background.fillSprite(TFT_LIGHTGREY);
+  tft.fillScreen(TFT_WHITE);
+  tft.fillRect(0, 0, 320, 60, TFT_DARKGREEN);
+  tft.setTextColor(TFT_WHITE);
+  tft.setFreeFont(FSSB18);
+  tft.drawFastHLine(0, 200, 320, TFT_BLUE);
+  tft.setTextSize(1);
+  tft.setTextDatum(TC_DATUM);
+  tft.drawString("Decent Scale", 159, 15);
+  //tft.pushSprite(0, 0);
+  Serial.println("Display set background completed.");
+#endif
+}
+
+void wio_status_update(char *pStatusMessage)
+{
+#if defined(__SAMD51__)
+  status_display.createSprite(320, 38);
+  status_display.fillSprite(TFT_LIGHTGREY);
+  status_display.setFreeFont(FSS9);
+  status_display.setTextColor(TFT_BLACK);
+  status_display.drawString((const char *)pStatusMessage, 5, 10);
+  status_display.pushSprite(0, 201);
+#endif
+}
+
+void wio_weigth_display_update(float weight_i)
+{
+#if defined(__SAMD51__)
+  char weight_str[8];
+  scale_display.createSprite(320, 138);
+  scale_display.fillSprite(TFT_WHITE);
+  scale_display.setFreeFont(FSSB24);
+  scale_display.setTextColor(TFT_BLACK);
+  scale_display.setTextSize(2);
+  snprintf(weight_str, sizeof(weight_str), "%5.1f", weight_i);
+  scale_display.setTextDatum(TR_DATUM);
+  scale_display.drawString((const char *)weight_str, 310, 30);
+  scale_display.pushSprite(0, 61);
+#endif
+}
 
 int16_t get_weight_tenthgramm_from_packet(char *pString_i)
 {
@@ -148,15 +228,12 @@ static void notifyCallback(
     size_t length,
     bool isNotify)
 {
-  /*
-  Serial.print("Notify callback for characteristic ");
-  Serial.print(pBLERemoteCharacteristic->getUUID().toString().c_str());
-  Serial.print(" of data length ");
-  Serial.println(length);
-  */
+  float scale_weight;
   if (call_back_counter < MAX_NOTIFY_READ_CYCLE)
   {
     call_back_counter++;
+    scale_weight = get_weight_gramm_from_packet((char *)pData);
+    wio_weigth_display_update(scale_weight);
     if (call_back_counter % 10 == 0)
     {
       Serial.print("Scale data #");
@@ -164,7 +241,7 @@ static void notifyCallback(
       Serial.print(": ");
       Serial_print_chars_in_hex(pData, length);
       Serial.print(" => ");
-      Serial.print(get_weight_gramm_from_packet((char *)pData));
+      Serial.print(scale_weight);
       Serial.println(" gr");
     }
   }
@@ -198,8 +275,11 @@ bool connectToServer()
 {
   uint8_t read_cycle;
   std::string read_value = "123456789012345678901";
+  char wio_status_msg[40];
   bool doWriteCmd;
+  float scale_weight;
 
+  wio_status_update((char *)"Connecting to scale...");
   doWriteCmd = false;
   pScaleClient = BLEDevice::getClient();
   if (pScaleClient == nullptr)
@@ -224,11 +304,14 @@ bool connectToServer()
   delay(100);
   if (pScaleClient->isConnected())
   {
-    Serial.println(" - Connected to server");
+    Serial.println(" - Connected to scale");
+    sprintf(wio_status_msg, "Connected to: %s", myDevice->getAddress().toString().c_str());
+    wio_status_update(wio_status_msg);
   }
   else
   {
     Serial.println("Connection failed!");
+    wio_status_update((char *)"Connection failed!");
     return false;
   }
   // Obtain a reference to the service we are after in the remote BLE server.
@@ -261,19 +344,17 @@ bool connectToServer()
         Serial.println(F(" -  and it is writeable"));
         Serial.println(F("Sending double Led OFF command to scale "));
         pWriteCharacteristic->writeValue(cmd_LedOff, DECENT_SCALE_PACKET_LEN, false);
-        delay(300);
+        delay(250);
         pWriteCharacteristic->writeValue(cmd_LedOff, DECENT_SCALE_PACKET_LEN, false);
-        delay(300);
+        delay(250);
+        Serial.println(F("Sending Timer Reset command to scale "));
+        pWriteCharacteristic->writeValue(cmd_TimerReset, DECENT_SCALE_PACKET_LEN, false);
+        delay(250);
         Serial.println(F("Sending double Led ON command to scale "));
         pWriteCharacteristic->writeValue(cmd_LedOn, DECENT_SCALE_PACKET_LEN, false);
-        delay(300);
+        delay(250);
         pWriteCharacteristic->writeValue(cmd_LedOn, DECENT_SCALE_PACKET_LEN, false);
-        delay(300);
-        Serial.println(F("Sending Timer Stop & Reset command to scale "));
-        pWriteCharacteristic->writeValue(cmd_TimerStop, DECENT_SCALE_PACKET_LEN, false);
-        delay(300);
-        pWriteCharacteristic->writeValue(cmd_TimerReset, DECENT_SCALE_PACKET_LEN, false);
-        delay(300);
+        delay(250);
       }
     }
   }
@@ -296,18 +377,20 @@ bool connectToServer()
   {
     Serial.println(" - test reading started");
     read_cycle = 0;
-    while (read_cycle < 3)
+    while (read_cycle < 1)
     {
       read_value = pReadCharacteristic->readValue();
       if (read_value.at(0) != 3)
       {
         read_cycle = 10;
       }
+      scale_weight = get_weight_gramm_from_packet((char *)read_value.c_str());
       Serial.print("Value: ");
       Serial_print_string_in_hex(&read_value, DECENT_SCALE_PACKET_LEN);
       Serial.print(" => ");
-      Serial.print(get_weight_gramm_from_packet((char *)read_value.c_str()));
+      Serial.print(scale_weight);
       Serial.println(" gr");
+      wio_weigth_display_update(scale_weight);
       read_cycle++;
       delay(2000);
     }
@@ -321,17 +404,10 @@ bool connectToServer()
     pReadCharacteristic->registerForNotify(notifyCallback);
     delay(200);
   }
-  /*
-  Serial.println("Disconnecting");
-  pScaleClient->disconnect();
-  read_cycle = 0;
-  */
   while (callBackRegistered && call_back_counter < MAX_NOTIFY_READ_CYCLE)
   {
     delay(1);
   }
-  //pWriteCharacteristic->~BLERemoteCharacteristic();
-  //pReadCharacteristic->~BLERemoteCharacteristic();
   pScaleClient->disconnect();
   delay(300);
   pScaleClient->disconnect();
@@ -357,6 +433,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     // We have found a device, let us now see if it contains the service we are looking for.
     if (memcmp(advertisedDevice.getAddress().getNative(), DecentScaleAddr.getNative(), 6) == 0)
     {
+      wio_status_update((char *)"Decent Scale found");
       Serial.print("Decent Scale found: ");
       Serial.println(advertisedDevice.toString().c_str());
       Serial.print("Address Type: ");
@@ -378,10 +455,10 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 void setup()
 {
   Serial.begin(115200);
-  while (!Serial)
-  {
-  };
-  delay(2000);
+  wio_gpio_init();
+  wio_display_init();
+  wio_set_background();
+  delay(1000);
   Serial.println("Starting Arduino BLE Client application...");
   BLEDevice::init("Wio_Scale_Client");
 
@@ -394,6 +471,7 @@ void setup()
   pBLEScan->setWindow(449);
   pBLEScan->setActiveScan(true);
   pBLEScan->start(5, false);
+  wio_status_update((char *)"Scanning...");
   /*
   */
 
