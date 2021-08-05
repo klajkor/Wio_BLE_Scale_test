@@ -17,7 +17,6 @@
 //Display driver:
 #include "TFT_eSPI.h" //TFT LCD library
 #include <SPI.h>
-#include "Free_Fonts.h"
 //#include "seeed_rpcUnified.h"
 //#include "rtl_ble/ble_unified.h"
 //#include "rtl_ble/ble_client.h"
@@ -72,7 +71,41 @@ uint32_t call_back_counter;
 TFT_eSPI tft; //initialize TFT LCD
 TFT_eSprite status_display(&tft);
 TFT_eSprite scale_display(&tft);
+
+// Display fonts structure
+typedef struct
+{
+  const GFXfont *title_font;
+  const GFXfont *status_font;
+  const GFXfont *weigth_font;
+} display_fonts_s;
+
+display_fonts_s Display_Fonts;
 #endif
+
+// Display parameter definition structure
+typedef struct
+{
+  int32_t width;
+  int32_t height;
+  int32_t title_height;
+  int32_t status_height;
+  int32_t status_start_y;
+  int32_t weight_height;
+  int32_t weight_y_pos;
+  int32_t weight_x_pos;
+} display_params_s;
+
+display_params_s Display_Params;
+
+// Display rotation enum
+typedef enum Display_Rotation_e
+{
+  Display_Rotation_Portrait = 0,
+  Display_Rotation_Landscape = 1
+} Display_Rotation_e;
+
+Display_Rotation_e display_rotation = Display_Rotation_Landscape;
 
 void wio_gpio_init(void)
 {
@@ -84,12 +117,35 @@ void wio_gpio_init(void)
 #endif
 }
 
-void wio_display_init(void)
+void wio_display_init(Display_Rotation_e rotation_i)
 {
 #if defined(__SAMD51__)
   tft.begin();
   tft.init();
-  tft.setRotation(3);
+  tft.setRotation(rotation_i);
+  switch (rotation_i)
+  {
+  case Display_Rotation_Landscape:
+    Display_Params.width = 320;
+    Display_Params.height = 240;
+    Display_Params.title_height = 50;
+    Display_Params.weight_y_pos = Display_Params.title_height;
+    Display_Params.weight_x_pos = Display_Params.width - 40;
+    break;
+  case Display_Rotation_Portrait:
+    Display_Params.width = 240;
+    Display_Params.height = 320;
+    Display_Params.title_height = 60;
+    Display_Params.weight_y_pos = Display_Params.title_height + 20;
+    Display_Params.weight_x_pos = Display_Params.width - 10;
+    break;
+  }
+  Display_Params.status_height = 40;
+  Display_Params.weight_height = 70;
+  Display_Params.status_start_y = Display_Params.height - Display_Params.status_height - 1;
+  Display_Fonts.title_font = &FreeSansBold18pt7b;
+  Display_Fonts.status_font = &FreeSans9pt7b;
+  Display_Fonts.weigth_font = &FreeSansBold18pt7b;
   tft.fillScreen(TFT_BLACK);
   Serial.println("Display init completed.");
 #endif
@@ -101,13 +157,13 @@ void wio_set_background(void)
   //background.createSprite(320, 240);
   //background.fillSprite(TFT_LIGHTGREY);
   tft.fillScreen(TFT_WHITE);
-  tft.fillRect(0, 0, 320, 60, TFT_DARKGREEN);
+  tft.fillRect(0, 0, Display_Params.width, Display_Params.title_height - 1, TFT_DARKGREEN);
   tft.setTextColor(TFT_WHITE);
-  tft.setFreeFont(FSSB18);
-  tft.drawFastHLine(0, 200, 320, TFT_BLUE);
+  tft.setFreeFont(Display_Fonts.title_font);
+  //tft.drawFastHLine(0, Display_Params.status_start_y, Display_Params.width, TFT_BLUE);
   tft.setTextSize(1);
-  tft.setTextDatum(TC_DATUM);
-  tft.drawString("Decent Scale", 159, 15);
+  tft.setTextDatum(MC_DATUM); // Middle-center
+  tft.drawString("Decent Scale", (Display_Params.width / 2) - 1, (Display_Params.title_height / 2) - 2);
   //tft.pushSprite(0, 0);
   Serial.println("Display set background completed.");
 #endif
@@ -116,28 +172,32 @@ void wio_set_background(void)
 void wio_status_update(char *pStatusMessage)
 {
 #if defined(__SAMD51__)
-  status_display.createSprite(320, 38);
+  status_display.createSprite(Display_Params.width, Display_Params.status_height);
   status_display.fillSprite(TFT_LIGHTGREY);
-  status_display.setFreeFont(FSS9);
+  status_display.drawFastHLine(0, 0, Display_Params.width, TFT_BLUE);
+  status_display.setFreeFont(Display_Fonts.status_font);
   status_display.setTextColor(TFT_BLACK);
-  status_display.drawString((const char *)pStatusMessage, 5, 10);
-  status_display.pushSprite(0, 201);
+  status_display.setTextDatum(ML_DATUM); // Middle-left
+  status_display.drawString((const char *)pStatusMessage, 3, (Display_Params.status_height / 2) - 1);
+  status_display.pushSprite(0, Display_Params.status_start_y);
 #endif
 }
 
-void wio_weigth_display_update(float weight_i)
+void wio_weight_display_update(float weight_i)
 {
 #if defined(__SAMD51__)
   char weight_str[8];
-  scale_display.createSprite(320, 138);
+  scale_display.createSprite(Display_Params.width, Display_Params.weight_height);
   scale_display.fillSprite(TFT_WHITE);
-  scale_display.setFreeFont(FSSB24);
+  scale_display.drawFastHLine(0, 0, Display_Params.width, TFT_RED);
+  scale_display.drawFastHLine(0, Display_Params.weight_height - 1, Display_Params.width, TFT_RED);
+  scale_display.setFreeFont(Display_Fonts.weigth_font);
   scale_display.setTextColor(TFT_BLACK);
   scale_display.setTextSize(2);
   snprintf(weight_str, sizeof(weight_str), "%5.1f", weight_i);
-  scale_display.setTextDatum(TR_DATUM);
-  scale_display.drawString((const char *)weight_str, 310, 30);
-  scale_display.pushSprite(0, 61);
+  scale_display.setTextDatum(MR_DATUM); // Middle-right
+  scale_display.drawString((const char *)weight_str, Display_Params.weight_x_pos, (Display_Params.weight_height / 2) - 1);
+  scale_display.pushSprite(0, Display_Params.weight_y_pos);
 #endif
 }
 
@@ -233,7 +293,7 @@ static void notifyCallback(
   {
     call_back_counter++;
     scale_weight = get_weight_gramm_from_packet((char *)pData);
-    wio_weigth_display_update(scale_weight);
+    wio_weight_display_update(scale_weight);
     if (call_back_counter % 10 == 0)
     {
       Serial.print("Scale data #");
@@ -305,7 +365,7 @@ bool connectToServer()
   if (pScaleClient->isConnected())
   {
     Serial.println(" - Connected to scale");
-    sprintf(wio_status_msg, "Connected to: %s", myDevice->getAddress().toString().c_str());
+    sprintf(wio_status_msg, "Connected: %s", myDevice->getAddress().toString().c_str());
     wio_status_update(wio_status_msg);
   }
   else
@@ -390,7 +450,7 @@ bool connectToServer()
       Serial.print(" => ");
       Serial.print(scale_weight);
       Serial.println(" gr");
-      wio_weigth_display_update(scale_weight);
+      wio_weight_display_update(scale_weight);
       read_cycle++;
       delay(2000);
     }
@@ -456,7 +516,7 @@ void setup()
 {
   Serial.begin(115200);
   wio_gpio_init();
-  wio_display_init();
+  wio_display_init(display_rotation);
   wio_set_background();
   delay(1000);
   Serial.println("Starting Arduino BLE Client application...");
