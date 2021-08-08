@@ -6,7 +6,8 @@
  * updated by chegewara
  */
 
-#include <string.h>
+#include "main_defs.h"
+//#include <string.h>
 #if defined(__SAMD51__)
 // for Wio Terminal:
 // Bluetooth driver:
@@ -14,9 +15,6 @@
 #include "Seeed_rpcUnified.h"
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
-//Display driver:
-#include "TFT_eSPI.h" //TFT LCD library
-#include <SPI.h>
 //#include "seeed_rpcUnified.h"
 //#include "rtl_ble/ble_unified.h"
 //#include "rtl_ble/ble_client.h"
@@ -26,6 +24,9 @@
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
 #endif
+
+#include "counter.h"
+#include "display.h"
 
 #if defined(__SAMD51__)
 #include "LIS3DHTR.h"
@@ -40,10 +41,6 @@ LIS3DHTR<TwoWire> lis;
 
 #define SCALE_PNP_SERVICE_UUID "0000180A-0000-1000-8000-00805F9B34FB"
 #define SCALE_PNP_CHAR_UUID "00002A50-0000-1000-8000-00805F9B34FB"
-
-#define MAX_NOTIFY_READ_CYCLE 50000U
-#define DECENT_SCALE_PACKET_LEN 7
-#define MIN_WEIGHT_INC ((float)0.3)
 
 // Scale main service UUID
 static BLEUUID serviceUUID(SCALE_MAIN_SERVICE_UUID);
@@ -75,50 +72,6 @@ uint8_t cmd_TimerReset[DECENT_SCALE_PACKET_LEN] = {0x03, 0x0B, 0x02, 0x00, 0x00,
 
 uint32_t call_back_counter;
 
-#if defined(__SAMD51__)
-TFT_eSPI tft; //initialize TFT LCD
-TFT_eSprite status_display(&tft);
-TFT_eSprite scale_display(&tft);
-TFT_eSprite brew_timer(&tft);
-
-// Display fonts structure
-typedef struct
-{
-  const GFXfont *title_font;
-  const GFXfont *status_font;
-  const GFXfont *weigth_font;
-  const GFXfont *timer_font;
-} display_fonts_s;
-
-display_fonts_s Display_Fonts;
-#endif
-
-// Display parameter definition structure
-typedef struct
-{
-  int32_t width;
-  int32_t height;
-  int32_t title_height;
-  int32_t status_height;
-  int32_t status_start_y;
-  int32_t weight_height;
-  int32_t weight_start_y;
-  int32_t weight_x_pos;
-  int32_t timer_height;
-  int32_t timer_start_y;
-} display_params_s;
-
-display_params_s Display_Params;
-
-// Display rotation enum
-typedef enum Display_Rotation_e
-{
-  Display_Rotation_Portrait = 0,
-  Display_Rotation_Landscape = 1
-} Display_Rotation_e;
-
-Display_Rotation_e display_rotation = Display_Rotation_Portrait;
-
 char accelero_str[32];
 char tap_cnt_str[32];
 unsigned int tap_cnt = 0;
@@ -126,16 +79,19 @@ int mic_analog_val;
 int mic_analog_min = 500;
 int mic_analog_max = 0;
 
-typedef struct
-{
-  float weight_q[6];
-  float diff_q[5];
-  uint8_t weight_q_idx;
-  uint8_t diff_q_idx;
-  float total_diff;
-} weight_queue_s;
-
 weight_queue_s scale_weight_q;
+
+// Function defs for main.cpp only
+void set_ScaleCmd(uint8_t *pCmd, std::string *pString_o);
+void Serial_print_string_in_hex(std::string *pString_i, uint32_t len_i);
+static void notifyCallback(
+    BLERemoteCharacteristic *pBLERemoteCharacteristic,
+    uint8_t *pData,
+    size_t length,
+    bool isNotify);
+bool connectToServer();
+void setup(void);
+void loop(void);
 
 void weight_q_reset(weight_queue_s *pWeightQueue_i)
 {
@@ -242,106 +198,6 @@ void wio_gpio_init(void)
 #endif
 }
 
-void wio_display_init(Display_Rotation_e rotation_i)
-{
-#if defined(__SAMD51__)
-  tft.begin();
-  tft.init();
-  tft.setRotation(rotation_i);
-  Display_Params.weight_height = 70;
-  Display_Params.timer_height = 70;
-  Display_Params.status_height = 30;
-  switch (rotation_i)
-  {
-  case Display_Rotation_Landscape:
-    Display_Params.width = 320;
-    Display_Params.height = 240;
-    Display_Params.title_height = 50;
-    Display_Params.weight_start_y = Display_Params.title_height;
-    Display_Params.weight_x_pos = Display_Params.width - 40;
-    Display_Params.timer_start_y = Display_Params.weight_start_y + Display_Params.weight_height;
-    break;
-  case Display_Rotation_Portrait:
-    Display_Params.width = 240;
-    Display_Params.height = 320;
-    Display_Params.title_height = 60;
-    Display_Params.weight_start_y = Display_Params.title_height + 20;
-    Display_Params.weight_x_pos = Display_Params.width - 10;
-    Display_Params.timer_start_y = Display_Params.weight_start_y + Display_Params.weight_height;
-    break;
-  }
-  Display_Params.status_start_y = Display_Params.height - Display_Params.status_height - 1;
-  Display_Fonts.title_font = &FreeSansBold18pt7b;
-  Display_Fonts.weigth_font = &FreeSansBold18pt7b;
-  Display_Fonts.timer_font = &FreeSans9pt7b;
-  Display_Fonts.status_font = &FreeSans9pt7b;
-  tft.fillScreen(TFT_BLACK);
-  status_display.createSprite(Display_Params.width, Display_Params.status_height);
-  scale_display.createSprite(Display_Params.width, Display_Params.weight_height);
-  brew_timer.createSprite(Display_Params.width, Display_Params.timer_height);
-  Serial.println("Display init completed.");
-#endif
-}
-
-void wio_set_background(void)
-{
-#if defined(__SAMD51__)
-  tft.fillScreen(TFT_WHITE);
-  tft.fillRect(0, 0, Display_Params.width, Display_Params.title_height - 1, TFT_DARKGREEN);
-  tft.setTextColor(TFT_WHITE);
-  tft.setFreeFont(Display_Fonts.title_font);
-  tft.setTextSize(1);
-  tft.setTextDatum(MC_DATUM); // Middle-center
-  tft.drawString("Decent Scale", (Display_Params.width / 2) - 1, (Display_Params.title_height / 2) - 2);
-  Serial.println("Display set background completed.");
-#endif
-}
-
-void wio_status_update(char *pStatusMessage)
-{
-#if defined(__SAMD51__)
-  //status_display.createSprite(Display_Params.width, Display_Params.status_height);
-  status_display.fillSprite(TFT_LIGHTGREY);
-  status_display.drawFastHLine(0, 0, Display_Params.width, TFT_BLUE);
-  status_display.setFreeFont(Display_Fonts.status_font);
-  status_display.setTextColor(TFT_BLACK);
-  status_display.setTextDatum(ML_DATUM); // Middle-left
-  status_display.drawString((const char *)pStatusMessage, 3, (Display_Params.status_height / 2) - 1);
-  status_display.pushSprite(0, Display_Params.status_start_y);
-#endif
-}
-
-void wio_weight_display_update(float weight_i)
-{
-#if defined(__SAMD51__)
-  char weight_str[8];
-  //scale_display.createSprite(Display_Params.width, Display_Params.weight_height);
-  scale_display.fillSprite(TFT_WHITE);
-  scale_display.setFreeFont(Display_Fonts.weigth_font);
-  scale_display.setTextColor(TFT_BLACK);
-  scale_display.setTextSize(2);
-  snprintf(weight_str, sizeof(weight_str), "%5.1f", weight_i);
-  scale_display.setTextDatum(MR_DATUM); // Middle-right
-  scale_display.drawString((const char *)weight_str, Display_Params.weight_x_pos, (Display_Params.weight_height / 2) - 1);
-  scale_display.pushSprite(0, Display_Params.weight_start_y);
-#endif
-}
-
-void wio_brew_timer_update(char *pStatusMessage, char *pExtraStr)
-{
-#if defined(__SAMD51__)
-  //status_display.createSprite(Display_Params.width, Display_Params.status_height);
-  brew_timer.fillSprite(TFT_WHITE);
-  brew_timer.drawFastHLine(0, 0, Display_Params.width, TFT_BLUE);
-  brew_timer.setFreeFont(Display_Fonts.timer_font);
-  brew_timer.setTextColor(TFT_BLACK);
-  brew_timer.setTextDatum(ML_DATUM); // Middle-left
-  brew_timer.drawString((const char *)pStatusMessage, 3, (int32_t)(Display_Params.timer_height / 4) - 1);
-  brew_timer.drawString((const char *)pExtraStr, 3, (int32_t)((3 * Display_Params.timer_height) / 4) - 1);
-  brew_timer.pushSprite(0, Display_Params.timer_start_y);
-#endif
-}
-
 int16_t get_weight_tenthgramm_from_packet(char *pString_i)
 {
   int8_t highByte;
@@ -436,9 +292,10 @@ static void notifyCallback(
     scale_weight = get_weight_gramm_from_packet((char *)pData);
     wio_weight_display_update(scale_weight);
     weight_q_push(&scale_weight_q, scale_weight);
-    //wio_get_acceleroXYZ_str(accelero_str);
-    snprintf(tap_cnt_str, 30, "Total diff: %8.2f", scale_weight_q.total_diff);
-    wio_brew_timer_update(tap_cnt_str, (char *)"");
+    if (call_back_counter % 5 == 0)
+    {
+      StateMachine_counter1(scale_weight_q.total_diff, MIN_WEIGHT_INC);
+    }
     if (call_back_counter % 10 == 0)
     {
       Serial.print("Scale data #");
@@ -657,7 +514,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
   }
 }; // MyAdvertisedDeviceCallbacks
 
-void setup()
+void setup(void)
 {
   Serial.begin(115200);
   weight_q_reset(&scale_weight_q);
@@ -665,7 +522,10 @@ void setup()
   wio_display_init(display_rotation);
   wio_set_background();
   wio_accelerometer_init();
-  delay(500);
+  StateMachine_counter1((float)(0.0), MIN_WEIGHT_INC);
+  delay(200);
+  wio_weight_display_update(0.0);
+  wio_brew_timer_update(0);
   Serial.println("Starting Arduino BLE Client application...");
   BLEDevice::init("Wio_Scale_Client");
 
@@ -686,7 +546,7 @@ void setup()
 } // End of setup.
 
 // This is the Arduino main loop function.
-void loop()
+void loop(void)
 {
 
   // If the flag "doConnect" is true then we have scanned for and found the desired
