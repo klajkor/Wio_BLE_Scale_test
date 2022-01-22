@@ -1,55 +1,83 @@
 #include "serial_print.h"
 
-void serial_print_string_in_hex(std::string *pString_i, uint32_t len_i)
+void serial_print_string_in_hex(std::string *p_string_i, uint32_t len_i)
 {
     uint32_t i;
     uint32_t max_len;
-    max_len = pString_i->length();
-    if (len_i < max_len)
+    max_len = p_string_i->length();
+    if (ENABLE_DEBUG_PRINT)
     {
-        max_len = len_i;
-    }
-    for (i = 0; i < max_len; i++)
-    {
-        if (pString_i->at(i) < 16)
+        if (len_i < max_len)
         {
-            Serial.print("0x0");
+            max_len = len_i;
         }
-        else
+        for (i = 0; i < max_len; i++)
         {
-            Serial.print("0x");
+            if (p_string_i->at(i) < 16)
+            {
+                Serial.print("0x0");
+            }
+            else
+            {
+                Serial.print("0x");
+            }
+            Serial.print(p_string_i->at(i), HEX);
+            Serial.print(",");
         }
-        Serial.print(pString_i->at(i), HEX);
-        Serial.print(",");
     }
 }
 
-void serial_println_string_in_hex(std::string *pString_i, uint32_t len_i)
+void serial_println_string_in_hex(std::string *p_string_i, uint32_t len_i)
 {
-    serial_print_string_in_hex(pString_i, len_i);
-    Serial.println("");
+    if (ENABLE_DEBUG_PRINT)
+    {
+        serial_print_string_in_hex(p_string_i, len_i);
+        Serial.println("");
+    }
 }
 
-void serial_print_chars_in_hex(uint8_t *pString_i, uint32_t len_i)
+void serial_print_chars_in_hex(uint8_t *p_string_i, uint32_t len_i)
 {
     uint32_t i;
-    for (i = 0; i < len_i; i++)
+    if (ENABLE_DEBUG_PRINT)
     {
-        if (pString_i[i] < 16)
+        for (i = 0; i < len_i; i++)
         {
-            Serial.print("0x0");
+            if (p_string_i[i] < 16)
+            {
+                Serial.print("0x0");
+            }
+            else
+            {
+                Serial.print("0x");
+            }
+            Serial.print(p_string_i[i], HEX);
+            Serial.print(",");
         }
-        else
-        {
-            Serial.print("0x");
-        }
-        Serial.print(pString_i[i], HEX);
-        Serial.print(",");
     }
 }
 
-void serial_println_chars_in_hex(uint8_t *pString_i, uint32_t len_i)
+void serial_println_chars_in_hex(uint8_t *p_string_i, uint32_t len_i)
 {
-    serial_print_chars_in_hex(pString_i, len_i);
-    Serial.println("");
+    if (ENABLE_DEBUG_PRINT)
+    {
+        serial_print_chars_in_hex(p_string_i, len_i);
+        Serial.println("");
+    }
+}
+
+void serial_print(const char *p_string_i)
+{
+    if (ENABLE_DEBUG_PRINT)
+    {
+        Serial.print(p_string_i);
+    }
+}
+
+void serial_println(const char *p_string_i)
+{
+    if (ENABLE_DEBUG_PRINT)
+    {
+        Serial.println(p_string_i);
+    }
 }
