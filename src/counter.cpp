@@ -35,11 +35,12 @@ void StateMachine_counter1(float weight_diff_i, float min_diff_treshold)
             elapsed_counter1 = 0;
             start_counter1 = millis();
             state_counter1 = COUNTER_STATE_START;
+            decent_cmd_timer_reset();
         }
         break;
     case COUNTER_STATE_START:
         state_counter1 = COUNTER_STATE_COUNTING;
-        //decent_cmd_timer_start();
+        decent_cmd_timer_start();
         wio_brew_timer_update(iSecCounter1);
         break;
     case COUNTER_STATE_COUNTING:
@@ -58,7 +59,7 @@ void StateMachine_counter1(float weight_diff_i, float min_diff_treshold)
         break;
     case COUNTER_STATE_STOP:
         state_counter1 = COUNTER_STATE_DISABLED;
-        //decent_cmd_timer_stop();
+        decent_cmd_timer_stop();
         wio_brew_timer_update(iSecCounter1);
         break;
     }
