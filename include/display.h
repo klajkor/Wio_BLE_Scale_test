@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Arduino.h>
-#include "main_defs.h"
 #include "counter.h"
+#include "main_defs.h"
+#include <Arduino.h>
 
 #if defined(__SAMD51__)
 // Display driver for Wio Terminal:
@@ -11,7 +11,7 @@
 #endif
 
 #if defined(__SAMD51__)
-extern TFT_eSPI tft; //initialize TFT LCD
+extern TFT_eSPI    tft; // initialize TFT LCD
 extern TFT_eSprite status_display;
 extern TFT_eSprite scale_display;
 extern TFT_eSprite brew_timer;
@@ -56,6 +56,6 @@ extern Display_Rotation_e display_rotation;
 
 void wio_display_init(Display_Rotation_e rotation_i);
 void wio_set_background(void);
-void wio_status_update(char *pStatusMessage);
+void wio_status_update(const char *pStatusMessage);
 void wio_weight_display_update(float weight_i);
 void wio_brew_timer_update(int sec_counter_i);

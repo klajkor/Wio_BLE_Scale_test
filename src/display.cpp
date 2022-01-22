@@ -67,7 +67,7 @@ void wio_set_background(void)
 #endif
 }
 
-void wio_status_update(char *pStatusMessage)
+void wio_status_update(const char *pStatusMessage)
 {
 #if defined(__SAMD51__)
     //status_display.createSprite(Display_Params.width, Display_Params.status_height);
@@ -76,7 +76,7 @@ void wio_status_update(char *pStatusMessage)
     status_display.setFreeFont(Display_Fonts.status_font);
     status_display.setTextColor(TFT_BLACK);
     status_display.setTextDatum(ML_DATUM); // Middle-left
-    status_display.drawString((const char *)pStatusMessage, 3, (Display_Params.status_height / 2) - 1);
+    status_display.drawString(pStatusMessage, 3, (Display_Params.status_height / 2) - 1);
     status_display.pushSprite(0, Display_Params.status_start_y);
 #endif
 }
