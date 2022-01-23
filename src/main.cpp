@@ -26,11 +26,12 @@
 #endif
 
 #include "app_messages.h"
-#include "counter.h"
 #include "decent_scale.h"
 #include "display.h"
 #include "serial_print.h"
+#include "stopwatch.h"
 #include "weight_queue.h"
+#include "wio_battery.h"
 #include "wio_gpio.h"
 
 #define SCALE_MAIN_SERVICE_UUID "0000FFF0-0000-1000-8000-00805F9B34FB"
@@ -57,6 +58,8 @@ static BLEAdvertisedDevice *    myDevice;
 BLEClient *       pScaleClient;
 BLERemoteService *pScaleRemoteService;
 
+static uint32_t display_cnt = 0;
+
 // Function defs for main.cpp only
 bool connectToServer();
 void setup(void);
@@ -79,7 +82,7 @@ class MyClientCallback : public BLEClientCallbacks
         decent_deinit();
         pCBclient->disconnect();
         delay(100);
-        wio_status_update(MSG_DISCONNECTED);
+        wio_ble_status_update(MSG_DISCONNECTED);
         serial_println(MSG_DISCONNECTED);
     }
 };
@@ -92,7 +95,7 @@ bool connectToServer()
     bool        doWriteCmd;
     float       scale_weight;
 
-    wio_status_update(MSG_CONNECTING_TO_SCALE);
+    wio_ble_status_update(MSG_CONNECTING_TO_SCALE);
     serial_println(MSG_CONNECTING_TO_SCALE);
     doWriteCmd = false;
     pScaleClient = BLEDevice::getClient();
@@ -105,11 +108,11 @@ bool connectToServer()
     if (pScaleClient == nullptr)
     {
         serial_println(MSG_FAILED_TO_CREATE_BLE_CLIENT);
-        wio_status_update(MSG_FAILED_TO_CREATE_BLE_CLIENT);
+        wio_ble_status_update(MSG_FAILED_TO_CREATE_BLE_CLIENT);
         return false;
     }
-    snprintf(wio_status_msg, 39, "%s: %s", MSG_FORMING_CONNECTION_TO, myDevice->getAddress().toString().c_str());
-    wio_status_update(wio_status_msg);
+    snprintf(wio_status_msg, 39, "%s: %s", MSG_CONNECTING_TO, myDevice->getAddress().toString().c_str());
+    wio_ble_status_update(wio_status_msg);
     serial_println(wio_status_msg);
 
     delay(100);
@@ -120,13 +123,13 @@ bool connectToServer()
     if (pScaleClient->isConnected())
     {
         snprintf(wio_status_msg, 39, "Connected: %s", myDevice->getAddress().toString().c_str());
-        wio_status_update(wio_status_msg);
+        wio_ble_status_update(wio_status_msg);
         serial_println(wio_status_msg);
     }
     else
     {
         serial_println(MSG_CONNECTION_FAILED);
-        wio_status_update(MSG_CONNECTION_FAILED);
+        wio_ble_status_update(MSG_CONNECTION_FAILED);
         return false;
     }
     // Obtain a reference to the service we are after in the remote BLE server.
@@ -141,7 +144,7 @@ bool connectToServer()
         serial_print(MSG_FAILED_TO_FIND);
         serial_print(MSG_SERVICE);
         serial_println(MSG_DISCONNECTING);
-        wio_status_update(MSG_DISCONNECTING);
+        wio_ble_status_update(MSG_DISCONNECTING);
         pScaleClient->disconnect();
         return false;
     }
@@ -189,7 +192,7 @@ bool connectToServer()
         serial_print(MSG_FAILED_TO_FIND);
         serial_print(MSG_READ_CHARACTERISTIC);
         serial_println(MSG_DISCONNECTING);
-        wio_status_update(MSG_DISCONNECTING);
+        wio_ble_status_update(MSG_DISCONNECTING);
         pScaleClient->disconnect();
         return false;
     }
@@ -234,7 +237,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     {
         char wio_status_msg[40];
         snprintf(wio_status_msg, 39, "%s: %s", MSG_SCANNING, advertisedDevice.getAddress().toString().c_str());
-        wio_status_update(wio_status_msg);
+        wio_ble_status_update(wio_status_msg);
         serial_println(wio_status_msg);
 
         // We have found a device, let us now see if it contains the service we are looking for.
@@ -242,7 +245,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
         {
             snprintf(wio_status_msg, 39, "%s: %s", MSG_DECENT_SCALE_FOUND,
                      advertisedDevice.getAddress().toString().c_str());
-            wio_status_update(wio_status_msg);
+            wio_ble_status_update(wio_status_msg);
             serial_print(wio_status_msg);
             BLEDevice::getScan()->stop();
             myDevice = new BLEAdvertisedDevice(advertisedDevice);
@@ -262,13 +265,15 @@ void setup(void)
     delay(200);
     serial_println(MSG_SETUP_STARTED);
     weight_q_reset(&scale_weight_q);
+    battery_init();
     wio_gpio_init();
     wio_display_init(display_rotation);
     wio_set_background();
-    StateMachine_counter1((float)(0.0), MIN_WEIGHT_INC);
-    delay(3000);
+    // StateMachine_counter1((float)(0.0), MIN_WEIGHT_INC);
+    delay(2000);
+    fsm_stopwatch(STOPWATCH_RESET);
+    wio_battery_status_update();
     wio_weight_display_update(0.0);
-    wio_brew_timer_update(0);
     serial_println(MSG_START_BLE_APP);
     BLEDevice::init("Wio_Scale_Client");
 
@@ -280,13 +285,13 @@ void setup(void)
     // pBLEScan->setWindow(449);
     pBLEScan->setActiveScan(true);
     pBLEScan->start(60);
-    wio_status_update(MSG_SCANNING);
+    wio_ble_status_update(MSG_SCANNING);
 } // End of setup.
 
 // This is the Arduino main loop function.
 void loop(void)
 {
-
+    stopwatch_states_t prev_stopwatch_state;
     // If the flag "doConnect" is true then we have scanned for and found the desired
     // BLE Server with which we wish to connect.  Now we connect to it.  Once we are
     // connected we set the connected flag to be true.
@@ -307,8 +312,10 @@ void loop(void)
     }
     if (connected == false)
     {
-        serial_print(".");
-        delay(1000);
+        if (display_cnt % 50 == 0)
+        {
+            serial_print(".");
+        }
     }
     if (connected == false && doScan == true)
     {
@@ -328,5 +335,28 @@ void loop(void)
           pBLEScan->start(25, true);
           */
     }
-
-} // End of loop
+    display_cnt++;
+    if (display_cnt >= 500)
+    {
+        wio_battery_status_update();
+        display_cnt = 0;
+    }
+    prev_stopwatch_state = fsm_stopwatch(STOPWATCH_NO_CHANGE);
+    if (digitalRead(WIO_KEY_A) == LOW)
+    {
+        fsm_stopwatch(STOPWATCH_RUNNING);
+    }
+    else if (digitalRead(WIO_KEY_B) == LOW)
+    {
+        fsm_stopwatch(STOPWATCH_STOPPED);
+    }
+    else if (digitalRead(WIO_KEY_C) == LOW)
+    {
+        fsm_stopwatch(STOPWATCH_RESET);
+    }
+    else
+    {
+        fsm_stopwatch(prev_stopwatch_state);
+    }
+    delay(20);
+}
