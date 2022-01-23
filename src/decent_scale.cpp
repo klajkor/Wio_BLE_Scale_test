@@ -216,7 +216,7 @@ void xTask_ble_scale_weight_read(void *pvParameters)
             {
                 scale_weight = get_weight_gramm_from_packet((char *)read_value.c_str());
                 weight_q_push(&scale_weight_q, scale_weight);
-                StateMachine_counter1(scale_weight_q.total_diff, MIN_WEIGHT_INC);
+                // StateMachine_counter1(scale_weight_q.total_diff, MIN_WEIGHT_INC);
                 wio_weight_display_update(scale_weight);
             }
         }
