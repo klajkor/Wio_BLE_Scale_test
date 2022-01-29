@@ -2,11 +2,6 @@
 
 #define ENABLE_DOUBLE_COMMAND_SENDING (1)
 
-#define STANDARD_TASK_STACK_SIZE ((uint32_t)(2 * 1024)) // 2k
-#define PRIO_SCALE_READ_TASK ((UBaseType_t)7)
-
-static const uint32_t DELAY_SCALE_READ_TASK = ((TickType_t)((125) / portTICK_PERIOD_MS));
-
 typedef struct
 {
     uint8_t pos;
@@ -30,8 +25,6 @@ static uint8_t CMD_TIMER_RESET[DECENT_SCALE_PACKET_LEN] = {0x03, 0x0B, 0x02, 0x0
 
 static BLERemoteCharacteristic *p_decent_ble_write_characteristic = nullptr;
 static BLERemoteCharacteristic *p_decent_ble_read_characteristic = nullptr;
-
-TaskHandle_t xHandle_ble_scale_weight_read = NULL;
 
 bool is_decent_scale_mac_address(bd_addr_t *device_mac_address)
 {
@@ -108,8 +101,8 @@ void decent_cmd_led_off(void)
     {
         return;
     }
-    Serial.println(F("Sending Led OFF command to scale "));
-    delay(50);
+    serial_print(MSG_SENDING_COMMAND_TO_SCALE);
+    serial_println(MSG_COMMAND_LED_OFF);
     for (ix = 0; ix < cycles; ix++)
     {
         p_decent_ble_write_characteristic->writeValue(CMD_LED_OFF, DECENT_SCALE_PACKET_LEN, false);
@@ -125,8 +118,8 @@ void decent_cmd_led_on(void)
     {
         return;
     }
-    Serial.println(F("Sending Led ON command to scale "));
-    delay(50);
+    serial_print(MSG_SENDING_COMMAND_TO_SCALE);
+    serial_println(MSG_COMMAND_LED_ON);
     for (ix = 0; ix < cycles; ix++)
     {
         p_decent_ble_write_characteristic->writeValue(CMD_LED_ON, DECENT_SCALE_PACKET_LEN, false);
@@ -142,8 +135,8 @@ void decent_cmd_timer_reset(void)
     {
         return;
     }
-    Serial.println(F("Sending Timer Reset command to scale "));
-    delay(50);
+    serial_print(MSG_SENDING_COMMAND_TO_SCALE);
+    serial_println(MSG_COMMAND_TIMER_RESET);
     for (ix = 0; ix < cycles; ix++)
     {
         p_decent_ble_write_characteristic->writeValue(CMD_TIMER_RESET, DECENT_SCALE_PACKET_LEN, false);
@@ -159,8 +152,8 @@ void decent_cmd_timer_start(void)
     {
         return;
     }
-    Serial.println(F("Sending Timer Start command to scale "));
-    delay(50);
+    serial_print(MSG_SENDING_COMMAND_TO_SCALE);
+    serial_println(MSG_COMMAND_TIMER_START);
     for (ix = 0; ix < cycles; ix++)
     {
         p_decent_ble_write_characteristic->writeValue(CMD_TIMER_START, DECENT_SCALE_PACKET_LEN, false);
@@ -176,8 +169,8 @@ void decent_cmd_timer_stop(void)
     {
         return;
     }
-    Serial.println(F("Sending Timer Stop command to scale "));
-    delay(50);
+    serial_print(MSG_SENDING_COMMAND_TO_SCALE);
+    serial_println(MSG_COMMAND_TIMER_STOP);
     for (ix = 0; ix < cycles; ix++)
     {
         p_decent_ble_write_characteristic->writeValue(CMD_TIMER_STOP, DECENT_SCALE_PACKET_LEN, false);
@@ -185,42 +178,20 @@ void decent_cmd_timer_stop(void)
     }
 }
 
-void create_scale_read_task(void)
-{
-    BaseType_t xReturned;
-
-    /* Create the task, storing the handle. */
-    xReturned = xTaskCreate(xTask_ble_scale_weight_read,     /* Function that implements the task. */
-                            "ble_scale_weight_read",         /* Text name for the task. */
-                            STANDARD_TASK_STACK_SIZE,        /* Stack size in words, not bytes. */
-                            (void *)1,                       /* Parameter passed into the task. */
-                            PRIO_SCALE_READ_TASK,            /* Priority at which the task is created. */
-                            &xHandle_ble_scale_weight_read); /* Used to pass out the created task's handle. */
-    if (xReturned != pdPASS)
-    {
-        Serial.println(F("FAILED to create scale weight read task"));
-    }
-}
-
-void xTask_ble_scale_weight_read(void *pvParameters)
+void ble_scale_weight_read(void)
 {
     std::string read_value = "123456789012345678901";
     float       scale_weight;
 
-    while (1)
+    if (p_decent_ble_read_characteristic != nullptr)
     {
-        if (p_decent_ble_read_characteristic != nullptr)
+        read_value = p_decent_ble_read_characteristic->readValue();
+        if (read_value.at(0) == 3)
         {
-            read_value = p_decent_ble_read_characteristic->readValue();
-            if (read_value.at(0) == 3)
-            {
-                scale_weight = get_weight_gramm_from_packet((char *)read_value.c_str());
-                weight_q_push(&scale_weight_q, scale_weight);
-                // StateMachine_counter1(scale_weight_q.total_diff, MIN_WEIGHT_INC);
-                wio_weight_display_update(scale_weight);
-            }
+            scale_weight = get_weight_gramm_from_packet((char *)read_value.c_str());
+            weight_q_push(&scale_weight_q, scale_weight);
+            // StateMachine_counter1(scale_weight_q.total_diff, MIN_WEIGHT_INC);
+            wio_weight_display_update(scale_weight);
         }
-        vTaskDelay(DELAY_SCALE_READ_TASK);
     }
-    vTaskDelete(xHandle_ble_scale_weight_read);
 }

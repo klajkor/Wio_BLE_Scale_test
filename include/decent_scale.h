@@ -7,9 +7,12 @@
 #include "Arduino.h"
 #include "BLEAddress.h"
 #include "BLEAdvertisedDevice.h"
+
+#include "app_messages.h"
 #include "counter.h"
 #include "display.h"
 #include "main_defs.h"
+#include "serial_print.h"
 #include "weight_queue.h"
 
 #define DECENT_SCALE_PACKET_LEN 7
@@ -26,5 +29,4 @@ void    decent_cmd_led_on(void);
 void    decent_cmd_timer_reset(void);
 void    decent_cmd_timer_start(void);
 void    decent_cmd_timer_stop(void);
-void    create_scale_read_task(void);
-void    xTask_ble_scale_weight_read(void *pvParameters);
+void    ble_scale_weight_read(void);
