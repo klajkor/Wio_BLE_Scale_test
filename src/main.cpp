@@ -26,8 +26,10 @@
 #endif
 
 #include "app_messages.h"
+#include "app_timer.h"
 #include "decent_scale.h"
 #include "display.h"
+#include "main.h"
 #include "serial_print.h"
 #include "stopwatch.h"
 #include "weight_queue.h"
@@ -60,10 +62,11 @@ BLERemoteService *pScaleRemoteService;
 
 static uint32_t display_cnt = 0;
 
-// Function defs for main.cpp only
-bool connectToServer();
-void setup(void);
-void loop(void);
+static TimerHandle_t scale_read_timer;
+bool                 do_scale_read = false;
+
+static TimerHandle_t battery_status_update_timer;
+bool                 do_battery_status_update = false;
 
 class MyClientCallback : public BLEClientCallbacks
 {
@@ -169,9 +172,15 @@ bool connectToServer()
             {
                 serial_println(MSG_WRITEABLE);
                 decent_write_init(pWriteCharacteristic);
+                delay(50);
                 decent_cmd_led_off();
-                decent_cmd_timer_reset();
+                delay(50);
                 decent_cmd_timer_stop();
+                delay(50);
+                decent_cmd_timer_stop();
+                delay(50);
+                decent_cmd_timer_reset();
+                delay(50);
                 decent_cmd_led_on();
             }
             else
@@ -221,7 +230,6 @@ bool connectToServer()
             delay(1000);
         }
         decent_read_init(pReadCharacteristic);
-        create_scale_read_task();
     }
     return true;
 }
@@ -274,11 +282,31 @@ void setup(void)
     fsm_stopwatch(STOPWATCH_RESET);
     wio_battery_status_update();
     wio_weight_display_update(0.0);
+    scale_read_timer =
+        xTimerCreate("scale_read_timer", PERIOD_SCALE_READ_TASK, pdTRUE, (void *)0, scale_read_timer_callback);
+    if (scale_read_timer == NULL)
+    {
+        serial_println(MSG_TIMER_CREATE_ERROR);
+    }
+    else
+    {
+        serial_println(MSG_TIMER_CREATED);
+        xTimerStart(scale_read_timer, 0);
+    }
+    battery_status_update_timer = xTimerCreate("battery_status_update_timer", PERIOD_BATTERY_STATUS_UPDATE, pdTRUE,
+                                               (void *)0, battery_status_update_callback);
+    if (battery_status_update_timer == NULL)
+    {
+        serial_println(MSG_TIMER_CREATE_ERROR);
+    }
+    else
+    {
+        serial_println(MSG_TIMER_CREATED);
+        xTimerStart(battery_status_update_timer, 0);
+    }
+
     serial_println(MSG_START_BLE_APP);
     BLEDevice::init("Wio_Scale_Client");
-
-    // Retrieve a Scanner and set the callback we want to use to be informed when we
-    // have detected a new device.
     pBLEScan = BLEDevice::getScan();
     pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
     // pBLEScan->setInterval(1349);
@@ -286,6 +314,7 @@ void setup(void)
     pBLEScan->setActiveScan(true);
     pBLEScan->start(60);
     wio_ble_status_update(MSG_SCANNING);
+
 } // End of setup.
 
 // This is the Arduino main loop function.
@@ -336,19 +365,14 @@ void loop(void)
           */
     }
     display_cnt++;
-    if (display_cnt >= 500)
-    {
-        wio_battery_status_update();
-        display_cnt = 0;
-    }
     prev_stopwatch_state = fsm_stopwatch(STOPWATCH_NO_CHANGE);
     if (digitalRead(WIO_KEY_A) == LOW)
     {
-        fsm_stopwatch(STOPWATCH_RUNNING);
+        fsm_stopwatch(STOPWATCH_STARTING);
     }
     else if (digitalRead(WIO_KEY_B) == LOW)
     {
-        fsm_stopwatch(STOPWATCH_STOPPED);
+        fsm_stopwatch(STOPWATCH_STOPPING);
     }
     else if (digitalRead(WIO_KEY_C) == LOW)
     {
@@ -358,5 +382,25 @@ void loop(void)
     {
         fsm_stopwatch(prev_stopwatch_state);
     }
-    delay(20);
+    if (do_scale_read)
+    {
+        do_scale_read = false;
+        ble_scale_weight_read();
+    }
+    if (do_battery_status_update)
+    {
+        do_battery_status_update = false;
+        wio_battery_status_update();
+    }
+    delay(DELAY_MAIN_LOOP);
+}
+
+void scale_read_timer_callback(TimerHandle_t xTimer)
+{
+    do_scale_read = true;
+}
+
+void battery_status_update_callback(TimerHandle_t xTimer)
+{
+    do_battery_status_update = true;
 }
