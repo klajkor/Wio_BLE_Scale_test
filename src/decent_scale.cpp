@@ -10,11 +10,9 @@ typedef struct
 
 #if defined(__SAMD51__)
 // NOTE! Reverse byte order on SAMD51!
-static const mac_addr_check_st DECENT_MAC_ADDR[] = {
-    {.pos = 3, .value = 0x10}, {.pos = 4, .value = 0xFF}, {.pos = 5, .value = 0xFF}};
+static const mac_addr_check_st DECENT_MAC_ADDR[] = {{.pos = 4, .value = 0xFF}, {.pos = 5, .value = 0xFF}};
 #else
-static const mac_addr_check_st DECENT_MAC_ADDR[] = {
-    {.pos = 2, .value = 0x10}, {.pos = 1, .value = 0xFF}, {.pos = 0, .value = 0xFF}};
+static const mac_addr_check_st DECENT_MAC_ADDR[] = {{.pos = 1, .value = 0xFF}, {.pos = 0, .value = 0xFF}};
 #endif
 
 static uint8_t CMD_LED_ON[DECENT_SCALE_PACKET_LEN] = {0x03, 0x0A, 0x01, 0x01, 0x00, 0x00, 0x09};
@@ -22,6 +20,7 @@ static uint8_t CMD_LED_OFF[DECENT_SCALE_PACKET_LEN] = {0x03, 0x0A, 0x00, 0x00, 0
 static uint8_t CMD_TIMER_STOP[DECENT_SCALE_PACKET_LEN] = {0x03, 0x0B, 0x00, 0x00, 0x00, 0x00, 0x08};
 static uint8_t CMD_TIMER_START[DECENT_SCALE_PACKET_LEN] = {0x03, 0x0B, 0x03, 0x00, 0x00, 0x00, 0x0B};
 static uint8_t CMD_TIMER_RESET[DECENT_SCALE_PACKET_LEN] = {0x03, 0x0B, 0x02, 0x00, 0x00, 0x00, 0x0A};
+static uint8_t CMD_TARE[DECENT_SCALE_PACKET_LEN] = {0x03, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x0C};
 
 static BLERemoteCharacteristic *p_decent_ble_write_characteristic = nullptr;
 static BLERemoteCharacteristic *p_decent_ble_read_characteristic = nullptr;
@@ -193,5 +192,21 @@ void ble_scale_weight_read(void)
             // StateMachine_counter1(scale_weight_q.total_diff, MIN_WEIGHT_INC);
             wio_weight_display_update(scale_weight);
         }
+    }
+}
+void decent_cmd_tare(void)
+{
+    uint32_t ix;
+    uint32_t cycles = (1 << (ENABLE_DOUBLE_COMMAND_SENDING & 0x01));
+    if (p_decent_ble_write_characteristic == nullptr)
+    {
+        return;
+    }
+    serial_print(MSG_SENDING_COMMAND_TO_SCALE);
+    serial_println(MSG_COMMAND_TARE);
+    for (ix = 0; ix < cycles; ix++)
+    {
+        p_decent_ble_write_characteristic->writeValue(CMD_TARE, DECENT_SCALE_PACKET_LEN, false);
+        delay(60);
     }
 }

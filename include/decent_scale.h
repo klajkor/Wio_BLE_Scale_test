@@ -30,3 +30,4 @@ void    decent_cmd_timer_reset(void);
 void    decent_cmd_timer_start(void);
 void    decent_cmd_timer_stop(void);
 void    ble_scale_weight_read(void);
+void    decent_cmd_tare(void);

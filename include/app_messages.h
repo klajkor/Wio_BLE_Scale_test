@@ -36,3 +36,4 @@ const char MSG_COMMAND_LED_ON[] = "LED ON";
 const char MSG_COMMAND_TIMER_RESET[] = "Timer Reset";
 const char MSG_COMMAND_TIMER_START[] = "Timer Start";
 const char MSG_COMMAND_TIMER_STOP[] = "Timer Stop";
+const char MSG_COMMAND_TARE[] = "Tare";
