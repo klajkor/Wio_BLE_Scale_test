@@ -244,9 +244,12 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     void onResult(BLEAdvertisedDevice advertisedDevice)
     {
         char wio_status_msg[40];
+        char ble_name[40];
         snprintf(wio_status_msg, 39, "%s: %s", MSG_SCANNING, advertisedDevice.getAddress().toString().c_str());
+        snprintf(ble_name, 39, " Name: %s", advertisedDevice.getName().c_str());
         wio_ble_status_update(wio_status_msg);
-        serial_println(wio_status_msg);
+        serial_print(wio_status_msg);
+        serial_println(ble_name);
 
         // We have found a device, let us now see if it contains the service we are looking for.
         if (is_decent_scale_mac_address(advertisedDevice.getAddress().getNative()))
@@ -254,12 +257,12 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
             snprintf(wio_status_msg, 39, "%s: %s", MSG_DECENT_SCALE_FOUND,
                      advertisedDevice.getAddress().toString().c_str());
             wio_ble_status_update(wio_status_msg);
-            serial_print(wio_status_msg);
+            serial_println(wio_status_msg);
             BLEDevice::getScan()->stop();
             myDevice = new BLEAdvertisedDevice(advertisedDevice);
             doConnect = true;
             doScan = false;
-        } // onResult
+        }
         else
         {
             doConnect = false;
@@ -277,9 +280,8 @@ void setup(void)
     wio_gpio_init();
     wio_display_init(display_rotation);
     wio_set_background();
-    // StateMachine_counter1((float)(0.0), MIN_WEIGHT_INC);
     delay(2000);
-    fsm_stopwatch(STOPWATCH_RESET);
+    fsm_stopwatch(STOPWATCH_EVT_RESET);
     wio_battery_status_update();
     wio_weight_display_update(0.0);
     scale_read_timer =
@@ -304,7 +306,7 @@ void setup(void)
         serial_println(MSG_TIMER_CREATED);
         xTimerStart(battery_status_update_timer, 0);
     }
-
+    print_endianness();
     serial_println(MSG_START_BLE_APP);
     BLEDevice::init("Wio_Scale_Client");
     pBLEScan = BLEDevice::getScan();
@@ -341,7 +343,7 @@ void loop(void)
     }
     if (connected == false)
     {
-        if (display_cnt % 50 == 0)
+        if (display_cnt % 100 == 0)
         {
             serial_print(".");
         }
@@ -365,22 +367,22 @@ void loop(void)
           */
     }
     display_cnt++;
-    prev_stopwatch_state = fsm_stopwatch(STOPWATCH_NO_CHANGE);
+    prev_stopwatch_state = fsm_stopwatch(STOPWATCH_EVT_NO_CHANGE);
     if (digitalRead(WIO_KEY_A) == LOW)
     {
-        fsm_stopwatch(STOPWATCH_STARTING);
+        fsm_stopwatch(STOPWATCH_EVT_BUTTON_PUSHED);
     }
     else if (digitalRead(WIO_KEY_B) == LOW)
     {
-        fsm_stopwatch(STOPWATCH_STOPPING);
+        // handle key B
     }
     else if (digitalRead(WIO_KEY_C) == LOW)
     {
-        fsm_stopwatch(STOPWATCH_RESET);
+        decent_cmd_tare();
     }
     else
     {
-        fsm_stopwatch(prev_stopwatch_state);
+        fsm_stopwatch(STOPWATCH_EVT_NO_CHANGE);
     }
     if (do_scale_read)
     {
@@ -403,4 +405,11 @@ void scale_read_timer_callback(TimerHandle_t xTimer)
 void battery_status_update_callback(TimerHandle_t xTimer)
 {
     do_battery_status_update = true;
+}
+
+void print_endianness(void)
+{
+    uint32_t       x = 0x12345678;
+    const uint8_t *p = reinterpret_cast<const uint8_t *>(&x);
+    Serial.printf("E: %02X%02X%02X%02X\n", p[3], p[2], p[1], p[0]);
 }

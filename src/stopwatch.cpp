@@ -5,43 +5,58 @@ AppTimer_st stopwatch_timer = {.start_time = 0, .secs = 0, .mins = 0, .running =
 static stopwatch_states_t stopwatch_state = STOPWATCH_NO_CHANGE;
 static stopwatch_states_t stopwatch_prev_state = STOPWATCH_NO_CHANGE;
 
-stopwatch_states_t fsm_stopwatch(stopwatch_states_t new_state)
+stopwatch_states_t fsm_stopwatch(stopwatch_events_t new_event)
 {
     uint32_t elapsed_time;
     uint32_t prev_secs;
-    if (new_state != STOPWATCH_NO_CHANGE)
+    stopwatch_prev_state = stopwatch_state;
+    switch (new_event)
     {
-        stopwatch_state = new_state;
-    }
-    switch (stopwatch_state)
-    {
-    case STOPWATCH_RESET:
+    case STOPWATCH_EVT_RESET:
+        stopwatch_state = STOPWATCH_RESET;
         stopwatch_timer.start_time = 0;
         stopwatch_timer.secs = 0;
         stopwatch_timer.mins = 0;
         stopwatch_timer.running = false;
         wio_brew_timer_update(stopwatch_timer.secs, stopwatch_timer.mins);
-        if (stopwatch_prev_state == STOPWATCH_RUNNING)
-        {
-            decent_cmd_timer_stop();
-        }
         decent_cmd_timer_reset();
-        stopwatch_prev_state = stopwatch_state;
-        stopwatch_state = STOPWATCH_NO_CHANGE;
         break;
-    case STOPWATCH_STARTING:
-        if (stopwatch_prev_state == STOPWATCH_RESET || stopwatch_prev_state == STOPWATCH_NO_CHANGE)
+    case STOPWATCH_EVT_BUTTON_PUSHED:
+        switch (stopwatch_state)
         {
+        case STOPWATCH_RESET:
+            stopwatch_state = STOPWATCH_RUNNING;
             stopwatch_timer.running = true;
             stopwatch_timer.start_time = millis();
             decent_cmd_timer_start();
-            stopwatch_prev_state = stopwatch_state;
-            stopwatch_state = STOPWATCH_RUNNING;
+            break;
+        case STOPWATCH_RUNNING:
+            stopwatch_state = STOPWATCH_STOPPED;
+            stopwatch_timer.running = false;
+            wio_brew_timer_update(stopwatch_timer.secs, stopwatch_timer.mins);
+            decent_cmd_timer_stop();
+            break;
+        case STOPWATCH_STOPPED:
+            stopwatch_state = STOPWATCH_RESET;
+            stopwatch_timer.start_time = 0;
+            stopwatch_timer.secs = 0;
+            stopwatch_timer.mins = 0;
+            stopwatch_timer.running = false;
+            wio_brew_timer_update(stopwatch_timer.secs, stopwatch_timer.mins);
+            if (stopwatch_prev_state == STOPWATCH_RUNNING)
+            {
+                decent_cmd_timer_stop();
+            }
+            decent_cmd_timer_reset();
+            break;
         }
-        else
-        {
-            stopwatch_state = stopwatch_prev_state;
-        }
+        break;
+    case STOPWATCH_EVT_NO_CHANGE:
+        break;
+    }
+    switch (stopwatch_state)
+    {
+    case STOPWATCH_RESET:
         break;
     case STOPWATCH_RUNNING:
         prev_secs = stopwatch_timer.secs;
@@ -52,27 +67,10 @@ stopwatch_states_t fsm_stopwatch(stopwatch_states_t new_state)
         {
             wio_brew_timer_update(stopwatch_timer.secs, stopwatch_timer.mins);
         }
-        stopwatch_prev_state = stopwatch_state;
-        break;
-    case STOPWATCH_STOPPING:
-        if (stopwatch_prev_state == STOPWATCH_RUNNING)
-        {
-            stopwatch_timer.running = false;
-            wio_brew_timer_update(stopwatch_timer.secs, stopwatch_timer.mins);
-            decent_cmd_timer_stop();
-            stopwatch_prev_state = stopwatch_state;
-            stopwatch_state = STOPWATCH_STOPPED;
-        }
-        else
-        {
-            stopwatch_state = stopwatch_prev_state;
-        }
         break;
     case STOPWATCH_STOPPED:
-        stopwatch_prev_state = stopwatch_state;
         break;
     case STOPWATCH_NO_CHANGE:
-        stopwatch_prev_state = stopwatch_state;
         break;
     }
     return stopwatch_state;
