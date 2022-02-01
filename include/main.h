@@ -8,3 +8,4 @@ void setup(void);
 void loop(void);
 void scale_read_timer_callback(TimerHandle_t xTimer);
 void battery_status_update_callback(TimerHandle_t xTimer);
+void print_endianness(void);
