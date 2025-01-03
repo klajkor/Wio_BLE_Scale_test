@@ -52,12 +52,12 @@ static BLEUUID charUUID_WR(SCALE_WRITE_CHAR_UUID);
 static boolean                  doConnect = true;
 static boolean                  connected = false;
 static boolean                  doScan = false;
-static BLEScan *                pBLEScan;
+static BLEScan                 *pBLEScan;
 static BLERemoteCharacteristic *pReadCharacteristic;
 static BLERemoteCharacteristic *pWriteCharacteristic;
-static BLEAdvertisedDevice *    myDevice;
+static BLEAdvertisedDevice     *myDevice;
 
-BLEClient *       pScaleClient;
+BLEClient        *pScaleClient;
 BLERemoteService *pScaleRemoteService;
 
 static uint32_t display_cnt = 0;
@@ -368,15 +368,11 @@ void loop(void)
     }
     display_cnt++;
     prev_stopwatch_state = fsm_stopwatch(STOPWATCH_EVT_NO_CHANGE);
-    if (digitalRead(WIO_KEY_A) == LOW)
+    if (digitalRead(KEY_STOPWATCH) == LOW)
     {
         fsm_stopwatch(STOPWATCH_EVT_BUTTON_PUSHED);
     }
-    else if (digitalRead(WIO_KEY_B) == LOW)
-    {
-        // handle key B
-    }
-    else if (digitalRead(WIO_KEY_C) == LOW)
+    else if (digitalRead(KEY_SCALE_TARE) == LOW)
     {
         decent_cmd_tare();
     }
